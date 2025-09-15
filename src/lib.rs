@@ -10,11 +10,13 @@ mod child_iter;
 mod detatch_iter;
 mod iter;
 mod iter_mut;
+mod iter_mut_predicate;
 
 pub use child_iter::SceneGraphChildIter;
 pub use detatch_iter::{DetachedNode, SceneGraphDetachIter};
 pub use iter::SceneGraphIter;
 pub use iter_mut::SceneGraphIterMut;
+use crate::iter_mut_predicate::SceneGraphIterMutPredicate;
 
 /// The core structure of `scene-graph`. This forms a rose tree, similar to a geneological tree.
 /// In this crate, we use geneological terms like `parent`, `child`, and `sibling` to describe node
@@ -245,6 +247,12 @@ impl<T> SceneGraph<T> {
         SceneGraphIterMut::new(self, NodeIndex::Root)
     }
 
+    /// Iterate mutably over the Scene Graph in a depth first traversal, skipping branches/subtrees where
+    /// a child does not fulfill the predicate.
+    pub fn iter_mut_predicate(&mut self, predicate: fn(&T) -> bool) -> SceneGraphIterMutPredicate<'_, T> {
+        SceneGraphIterMutPredicate::new(self, NodeIndex::Root, predicate)
+    }
+
     /// Iterate immutably over the Scene Graph in a depth first traversal.
     pub fn iter(&self) -> SceneGraphIter<'_, T> {
         self.iter_from_node(NodeIndex::Root).unwrap()
@@ -253,6 +261,11 @@ impl<T> SceneGraph<T> {
     /// Iterate immutably over the Scene Graph out of order. This is useful for speed.
     pub fn iter_out_of_order(&self) -> impl Iterator<Item = (NodeIndex, &T)> {
         self.arena.iter().map(|(k, v)| (NodeIndex::Branch(k), &v.value))
+    }
+
+    /// Iterate mutably over the Scene Graph out of order. This is useful for speed.
+    pub fn iter_out_of_order_mut(&mut self) -> impl Iterator<Item = (NodeIndex, &mut T)> {
+        self.arena.iter_mut().map(|(k, v)| (NodeIndex::Branch(k), &mut v.value))
     }
 
     /// Iterate immutably over the Scene Graph in a depth first traversal.
@@ -269,7 +282,7 @@ impl<T> SceneGraph<T> {
         Ok(SceneGraphIter::new(self, parent_value, children))
     }
 
-    /// Iterate immutably over the Scene Graph in a depth first traversal.
+    /// Iterate mutably over the Scene Graph in a depth first traversal.
     pub fn iter_mut_from_node(&mut self, node_index: NodeIndex) -> Result<SceneGraphIterMut<'_, T>, NodeDoesNotExist> {
         match node_index {
             NodeIndex::Root => {}
@@ -325,6 +338,23 @@ impl<T> SceneGraph<T> {
         }
 
         Ok(SceneGraphChildIter::new(self, parent_index))
+    }
+
+    /// Applies a function on the given node and all its direct ancestors.
+    pub fn for_each_upward(&mut self, starting_node: NodeIndex, function: fn(&mut T)) {
+        let mut current_node = Some(starting_node);
+        while let Some(node) = current_node {
+            if let NodeIndex::Branch(idx) = node {
+                current_node = self.arena.get_mut(idx)
+                    .map(|n| {
+                        function(&mut n.value);
+                        n.parent
+                    });
+            } else {
+                function(&mut self.root);
+                current_node = None;
+            }
+        }
     }
 
     /// Places a node as part of moving or attaching it.
