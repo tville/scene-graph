@@ -468,6 +468,16 @@ impl<'a, T> IntoIterator for &'a mut SceneGraph<T> {
     }
 }
 
+impl <T: Clone> Clone for SceneGraph<T> {
+  fn clone(&self) -> SceneGraph<T> {
+    SceneGraph {
+      root: self.root.clone(),
+      arena: self.arena.clone(),
+      root_children: self.root_children.clone(),
+    }
+  }
+}
+
 /// A wrapper around the values given to the SceneGraph. This struct includes the data on the
 /// relationships to other nodes, in addition to the value placed at the node.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
