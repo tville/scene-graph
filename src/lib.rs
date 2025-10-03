@@ -48,6 +48,15 @@ impl<T> SceneGraph<T> {
         }
     }
 
+    /// Creates a new `SceneGraph` where the backing Arena will have the given initial capacity.
+    pub fn with_capacity(root: T, capacity: usize) -> Self {
+      Self {
+        arena: Arena::with_capacity(capacity),
+        root,
+        root_children: None,
+      }
+    }
+
     /// Clears all nodes from `self`, leaving the `Root` in place. If you want to edit the root too,
     /// just make a new SceneGraph.
     ///
