@@ -11,12 +11,15 @@ mod detatch_iter;
 mod iter;
 mod iter_mut;
 mod iter_mut_predicate;
+mod iter_with_index;
 
 pub use child_iter::SceneGraphChildIter;
 pub use detatch_iter::{DetachedNode, SceneGraphDetachIter};
 pub use iter::SceneGraphIter;
 pub use iter_mut::SceneGraphIterMut;
 use crate::iter_mut_predicate::SceneGraphIterMutPredicate;
+use crate::iter_with_index::SceneGraphIterWithIndex;
+
 
 /// The core structure of `scene-graph`. This forms a rose tree, similar to a geneological tree.
 /// In this crate, we use geneological terms like `parent`, `child`, and `sibling` to describe node
@@ -303,6 +306,20 @@ impl<T> SceneGraph<T> {
         };
 
         Ok(SceneGraphIterMut::new(self, node_index))
+    }
+
+    /// Iterate immutably over the Scene Graph in a depth first traversal, with access to the value and
+    /// the associated node index instead of a parent-child value pair.
+    pub fn iter_from_node_with_index(&self, node_index: NodeIndex) -> Result<SceneGraphIterWithIndex<'_, T>, NodeDoesNotExist> {
+        let children = match node_index {
+            NodeIndex::Root => self.root_children.as_ref(),
+            NodeIndex::Branch(idx) => {
+                let node = self.arena.get(idx).ok_or(NodeDoesNotExist)?;
+                node.children.as_ref()
+            }
+        };
+
+        Ok(SceneGraphIterWithIndex::new(self, node_index, children))
     }
 
     /// Iterate while detaching over the Scene Graph in a depth first traversal.
