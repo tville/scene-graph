@@ -1,18 +1,18 @@
 use thunderdome::Index;
 
-use crate::{Node, NodeIndex, SceneGraph};
+use crate::{NodeIndex, SceneGraph};
 
-/// A mutable iterator over the children of a node in a [SceneGraph],
+/// An iterator over the children of a node in a [SceneGraph],
 /// that skips branches/subtrees where the predicate is not fulfilled.
-/// See [SceneGraph::iter_mut_predicate] for more information.
-pub struct SceneGraphIterMutPredicate<'a, T> {
-    sg: &'a mut SceneGraph<T>,
+/// See [SceneGraph::iter_predicate] for more information.
+pub struct SceneGraphIterPredicate<'a, T> {
+    sg: &'a SceneGraph<T>,
     predicate: fn(&T) -> bool,
     stacks: Vec<StackState>,
 }
 
-impl<'a, T> SceneGraphIterMutPredicate<'a, T> {
-    pub(crate) fn new(sg: &'a mut SceneGraph<T>, root_node_idx: NodeIndex, predicate: fn(&T) -> bool) -> Self {
+impl<'a, T> SceneGraphIterPredicate<'a, T> {
+    pub(crate) fn new(sg: &'a SceneGraph<T>, root_node_idx: NodeIndex, predicate: fn(&T) -> bool) -> Self {
         let mut stacks = Vec::new();
 
         let first_child = match root_node_idx {
@@ -23,7 +23,7 @@ impl<'a, T> SceneGraphIterMutPredicate<'a, T> {
         if let Some(first_child) = first_child {
             stacks.push(StackState::new(root_node_idx, first_child));
         };
-        SceneGraphIterMutPredicate {
+        SceneGraphIterPredicate {
             sg,
             predicate,
             stacks
@@ -31,8 +31,8 @@ impl<'a, T> SceneGraphIterMutPredicate<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for SceneGraphIterMutPredicate<'a, T> {
-    type Item = (&'a mut T, &'a mut T);
+impl<'a, T> Iterator for SceneGraphIterPredicate<'a, T> {
+    type Item = (&'a T, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stacks.is_empty() {
@@ -40,18 +40,21 @@ impl<'a, T> Iterator for SceneGraphIterMutPredicate<'a, T> {
 
             let (parent, current_child) = match stack_frame.parent {
                 NodeIndex::Root => {
-                    let parent = &mut self.sg.root;
+                    let parent = &self.sg.root;
                     if !(self.predicate)(&parent) {
                         // The root does not fulfill the predicate, the whole graph will be skipped
                         continue;
                     }
-                    let child = self.sg.arena.get_mut(stack_frame.current_child).unwrap();
+                    let child = self.sg.arena.get(stack_frame.current_child).unwrap();
                     (parent, child)
                 }
                 NodeIndex::Branch(idx) => {
-                    let (parent, current_child) = self.sg.arena.get2_mut(idx, stack_frame.current_child);
-
-                    (&mut parent.unwrap().value, current_child.unwrap())
+                    if idx == stack_frame.current_child {
+                      panic!("Parent and child have identical indices during traversal");
+                    }
+                    let parent = self.sg.arena.get(idx);
+                    let current_child = self.sg.arena.get(stack_frame.current_child);
+                    (&parent.unwrap().value, current_child.unwrap())
                 }
             };
 
@@ -66,12 +69,6 @@ impl<'a, T> Iterator for SceneGraphIterMutPredicate<'a, T> {
                 continue;
             }
 
-            // safety:  this is a lifetime extension, which i know is valid because get2_mut
-            // panics when we pass in two of the same things, and this iterator requires `&mut SG`
-            // to call `next`.
-            let (parent, current_child): (&mut T, &mut Node<T>) =
-                unsafe { (&mut *(parent as *mut _), &mut *(current_child as *mut _)) };
-
             if let Some(first_child) = current_child.children.map(|v| v.first) {
                 self.stacks.push(StackState::new(
                     NodeIndex::Branch(stack_frame.current_child),
@@ -79,7 +76,7 @@ impl<'a, T> Iterator for SceneGraphIterMutPredicate<'a, T> {
                 ));
             }
 
-            return Some((parent, &mut current_child.value));
+            return Some((parent, &current_child.value));
         }
         return None;
     }
@@ -108,7 +105,7 @@ mod tests {
     fn scene_graph_returns_nothing_on_empty_iteration() {
         let mut scene_graph = SceneGraph::new("Root");
 
-        assert!(scene_graph.iter_mut_predicate(|_node| {true}).next().is_none());
+        assert!(scene_graph.iter_predicate(|_node| {true}).next().is_none());
     }
 
     #[test]
@@ -122,7 +119,7 @@ mod tests {
 
         assert_eq!(
             Vec::from_iter(sg
-                .iter_mut_predicate(|_node| {true})
+                .iter_predicate(|_node| {true})
                 .map(|(_parent, value)| &*value)
                 .copied()),
             vec!["First Child", "Second Child", "First Grandchild"]
@@ -134,11 +131,11 @@ mod tests {
         let mut sg = SceneGraph::new("Root");
         let root_idx = NodeIndex::Root;
         let child = sg.attach(root_idx, "First Child").unwrap();
-        let _child2 = sg.attach(child, "Second Child").unwrap();
+        sg.attach(child, "Second Child").unwrap();
 
         assert_eq!(
             Vec::from_iter(sg
-                .iter_mut_predicate(|_node| {true})
+                .iter_predicate(|_node| {true})
                 .map(|(_parent, value)| &*value)
                 .copied()),
             vec!["First Child", "Second Child"]
@@ -153,7 +150,7 @@ mod tests {
 
         assert_eq!(
             Vec::from_iter(sg
-                .iter_mut_predicate(|_node| {true})
+                .iter_predicate(|_node| {true})
                 .map(|(_parent, value)| &*value).copied()),
             vec!["First Child",]
         );
@@ -165,7 +162,7 @@ mod tests {
         let root_idx = NodeIndex::Root;
         let _c1 = sg.attach(root_idx, ConditionalNode::new("Child 1", true)).unwrap();
 
-        assert_eq!(0, sg.iter_mut_predicate(|node| {node.condition}).count());
+        assert_eq!(0, sg.iter_predicate(|node| {node.condition}).count());
     }
 
     #[test]
@@ -181,7 +178,7 @@ mod tests {
 
         assert_eq!(
             Vec::from_iter(sg
-                .iter_mut_predicate(|node| {node.condition})
+                .iter_predicate(|node| {node.condition})
                 .map(|(_parent, value)| &value.name).cloned()),
             vec!["Child 1", "Child of child 1", "Child 3"]
         );

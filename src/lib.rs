@@ -10,6 +10,7 @@ mod child_iter;
 mod detatch_iter;
 mod iter;
 mod iter_mut;
+mod iter_predicate;
 mod iter_mut_predicate;
 
 pub use child_iter::SceneGraphChildIter;
@@ -17,6 +18,7 @@ pub use detatch_iter::{DetachedNode, SceneGraphDetachIter};
 pub use iter::SceneGraphIter;
 pub use iter_mut::SceneGraphIterMut;
 use crate::iter_mut_predicate::SceneGraphIterMutPredicate;
+use crate::iter_predicate::SceneGraphIterPredicate;
 
 /// The core structure of `scene-graph`. This forms a rose tree, similar to a geneological tree.
 /// In this crate, we use geneological terms like `parent`, `child`, and `sibling` to describe node
@@ -256,8 +258,9 @@ impl<T> SceneGraph<T> {
         SceneGraphIterMut::new(self, NodeIndex::Root)
     }
 
-    /// Iterate mutably over the Scene Graph in a depth first traversal, skipping branches/subtrees where
-    /// a child does not fulfill the predicate.
+    /// Iterate mutably over the Scene Graph in a depth first traversal, skipping
+    /// branches/subtrees where a child does not fulfill the predicate.
+    /// Note: Allocates in order to manage the traversal.
     pub fn iter_mut_predicate(&mut self, predicate: fn(&T) -> bool) -> SceneGraphIterMutPredicate<'_, T> {
         SceneGraphIterMutPredicate::new(self, NodeIndex::Root, predicate)
     }
@@ -265,6 +268,13 @@ impl<T> SceneGraph<T> {
     /// Iterate immutably over the Scene Graph in a depth first traversal.
     pub fn iter(&self) -> SceneGraphIter<'_, T> {
         self.iter_from_node(NodeIndex::Root).unwrap()
+    }
+
+    /// Iterate immutably over the Scene Graph in a depth first traversal, skipping
+    /// branches/subtrees where a child does not fulfill the predicate.
+    /// Note: Allocates in order to manage the traversal.
+    pub fn iter_predicate(&self, predicate: fn(&T) -> bool) -> SceneGraphIterPredicate<'_, T> {
+        SceneGraphIterPredicate::new(self, NodeIndex::Root, predicate)
     }
 
     /// Iterate immutably over the Scene Graph out of order. This is useful for speed.
